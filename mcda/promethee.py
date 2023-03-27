@@ -1,6 +1,9 @@
 import pandas as pd
 import numpy as np
 from enum import Enum
+import copy
+import matplotlib.pyplot as plt
+import networkx as nx
 
 Data = pd.DataFrame | np.ndarray
 
@@ -51,6 +54,9 @@ class Promethe:
     def ranking(self):
         pass
 
+    def create_graph(self):
+        pass
+
 
 class PrometheI(Promethe):
     def ranking(self):
@@ -98,13 +104,74 @@ class PrometheI(Promethe):
         
         return self.final_ranking_names
     
+    def create_graph(self):
+        df = pd.DataFrame(self.matrix, columns=self.alternatives_names, index=self.alternatives_names)
+        arrows = {x:[] for x in self.alternatives_names}
+        reversed_arrows = {x:[] for x in self.alternatives_names}
+        for i, level in enumerate(self.final_ranking_names[1:]):
+            for alt in level:
+                for prev_alt in self.final_ranking_names[i]:
+                    if df[alt][prev_alt] == 'P':
+                        arrows[prev_alt].append(alt)
+                        reversed_arrows[alt].append(prev_alt)
+
+        for alt in arrows: # append the alternatives that have no predecessors from previous step
+            if len(arrows[alt]) == 0:
+                for row in df:
+                    if df[row][alt] == 'P':
+                        arrows[alt].append(row)
+
+        allPconnections = copy.deepcopy(arrows)
+        for i, level in enumerate(self.final_ranking_names[::-1]):
+            for alt in level:
+                for pointing_alt in reversed_arrows[alt]:
+                    for refs in reversed_arrows[pointing_alt]:
+                        allPconnections[refs] += allPconnections[alt] + [alt]
+                        allPconnections[refs] = list(set(allPconnections[refs]))
+
+        idx = [x for x in self.alternatives_names]
+        rest = []
+        for i in idx:
+            for j in idx:
+                if df[j][i] == 'P' and j not in allPconnections[i]:
+                    rest.append((i,j))
+
+        for i,j in rest:
+            for k, m in rest:
+                if j == m and df[k][i] == 'P':
+                    rest.remove((i,j))
+        for i,j in rest:
+            arrows[i].append(j)      
+        G = nx.DiGraph()
+        G.add_edges_from([(i,j) for i in arrows for j in arrows[i]])
+        print(arrows)
+        return G
+
+    
     
 
 
 class PrometheII(Promethe):
     def ranking(self):
-        self.ranking = np.arange(self.pi.shape[0])
-        self.ranking = self.ranking[np.argsort(self.net_flows)]
-        self.ranking = self.ranking[::-1]
-        self.ranking_names = [self.alternatives_names[i] for i in self.ranking]
+        self.final_ranking = np.arange(self.pi.shape[0])
+        self.final_ranking = self.final_ranking[np.argsort(self.net_flows)]
+        self.final_ranking = self.final_ranking[::-1]
+        self.ranking_names = [self.alternatives_names[i] for i in self.final_ranking]
         return self.ranking_names
+
+    def create_graph(self):
+        G = nx.DiGraph()
+        if len(set(self.net_flows)) == len(self.net_flows):
+            G.add_edges_from([(name, self.ranking_names[i+1]) for i, name in enumerate(self.ranking_names[:-1])])
+        else:
+            lefts = 0
+            for i, name in enumerate(self.ranking_names[:-1]):
+                if self.net_flows[self.final_ranking[i]] > self.net_flows[self.final_ranking[i+1]]:
+                    G.add_edges_from([(name, self.ranking_names[i+1])])
+                    while lefts > 0:
+                        G.add_edges_from([(self.ranking_names[i-lefts], name)])
+                        lefts -= 1
+                elif i > 0:
+                    G.add_edges_from([(self.ranking_names[i-1], self.ranking_names[i+1])])
+                    lefts += 1
+        return G
