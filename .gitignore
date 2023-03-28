@@ -6,3 +6,4 @@ universities_raw.txt
 .vscode
 mcda.egg-info/*
 */__pycache__
+build
