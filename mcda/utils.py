@@ -20,7 +20,23 @@ def get_srf(Z: int, ordered_criteria: list[str], blank_cards: list[int]):
     w = 1 + (Z-1) * (r2 - 1)/(r2[-1] - 1)
     w /= w.sum()
 
-    return {criterion: weight for criterion, weight in zip(ordered_criteria, w)}
+    weights_dict = {}
+    for criterion, weight in zip(ordered_criteria, w):
+        if isinstance(criterion, tuple):
+            for crit in criterion:
+                weights_dict[crit] = weight
+        else:
+            weights_dict[criterion] = weight
+
+    return weights_dict
+
+
+def infer_lambda(weights: np.ndarray, criteria_to_be_compared: list[list]):
+    weights_sum = []
+    for criteria in criteria_to_be_compared:
+        weights_sum.append(weights[criteria].sum())
+
+    return min(weights_sum)
 
 
 if __name__ == "__main__":
