@@ -11,10 +11,6 @@ class Relation(Enum):
     INDIFF = 2
     INCOMP = 3
 
-#! I compared results with presentation results. In one place there is an error
-#! slide 19 0.33 -> 0.4 and 0.66 -> 0.8
-#! Some test comparing all these values should be written for sure
-
 
 class ElectreTriB:
     def solve(
@@ -30,7 +26,11 @@ class ElectreTriB:
     ):
         # expand dimensions so that it is broadcastable with profiles
         self.alternatives = alternatives[:, None, :]
-        # self.attribute_ranges = attributes_ranges
+
+        if not all((preference_types == 1) | (preference_types == -1)):
+            raise ValueError(
+                "COST TYPE SHOULD BE REPRESENTED AS -1 AND GAIN AS 1")
+
         self.preference_types = preference_types
         self.thresholds = {k: arr[None, :, :] for k, arr in thresholds.items()}
         self.profiles = profiles[None, :, :]
@@ -88,7 +88,6 @@ class ElectreTriB:
         m_conc = self._fill_the_matrix(
             should_be_1, should_be_0, partial_c)
 
-        # print(m_conc_alt_to_prof)
         return m_conc
 
     def _marginal_discordance(self, profile_to_alternative=False):
@@ -106,7 +105,7 @@ class ElectreTriB:
         # it won't influence the Credibility and still be broadcastable
         m_disc[np.repeat(
             self.thresholds['v'] == -1, self.n_alternatives, axis=0)] = 0
-        # print(m_disc)
+
         return m_disc
 
     def _credibility(self, C, d):
@@ -115,22 +114,19 @@ class ElectreTriB:
         return C[:, :, 0] * np.prod(np.where(C < d, division, 1), axis=-1)
 
     def _aggregate(self):
-        self.C_a_b = self.marginal_c_a_b @ self.weights / self.weights.sum()
-        self.C_b_a = self.marginal_c_b_a @ self.weights / self.weights.sum()
-        # print(self.C_a_b, self.C_b_a)
+        # calculate comrehensive concordance index
+        self.comp_C_a_b = self.marginal_c_a_b @ self.weights / self.weights.sum()
+        self.comp_C_b_a = self.marginal_c_b_a @ self.weights / self.weights.sum()
 
+        # Calculate credibility
         self.C_a_b = self._credibility(
-            self.C_a_b[:, :, None], self.marginal_d_a_b)
+            self.comp_C_a_b[:, :, None], self.marginal_d_a_b)
         self.C_b_a = self._credibility(
-            self.C_b_a[:, :, None], self.marginal_d_b_a)
-
-        # print(self.C_a_b, self.C_b_a)
+            self.comp_C_b_a[:, :, None], self.marginal_d_b_a)
 
     def _threshold_credibility(self):
         self.S_a_b = self.C_a_b >= self.credibility_th
         self.S_b_a = self.C_b_a >= self.credibility_th
-
-        # print(self.S_a_b, self.S_b_a)
 
     def _preference_structure(self):
         self.p_structure = np.full(
@@ -138,8 +134,6 @@ class ElectreTriB:
         self.p_structure[~self.S_a_b & self.S_b_a] = Relation.PREF_B_TO_A.value
         self.p_structure[self.S_a_b & self.S_b_a] = Relation.INDIFF.value
         self.p_structure[~self.S_a_b & ~self.S_b_a] = Relation.INCOMP.value
-
-        # print(self.p_structure)
 
     def pessimistic_assignment(self):
         self.assignment = self.S_a_b.sum(axis=1) + 1
