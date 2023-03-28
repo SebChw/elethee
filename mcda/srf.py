@@ -1,20 +1,29 @@
 import numpy as np
 
-class SRF:
-    def solve(self, Z: int, num: int, blank_cards: list[int]):
-        assert len(blank_cards) == num-1
 
-        weights = np.zeros(num)
-        r = np.zeros(num +1)
-        for i in range(1, num+1):
-            r[i] = i + np.sum(blank_cards[:i-1])
-        
-        for i in range(1, num+1):
-            weights[i-1] = 1 + (Z-1) * (r[i] - 1) / (r[num] - 1)
-        weights = weights / np.sum(weights)
-        weights = weights[::-1]
-        print(weights)
+def get_srf(Z: int, ordered_criteria: list[str], blank_cards: list[int]):
+    """Calculate weights using SRF method
+
+    Args:
+        Z (int): ratio: weight_of_most_important/weight_of_least_important
+        ordered_criteria (list[str]): criteria ordered from the worst to the best.
+        If two criteria are on the same level pass them IN A TUPLE like this: ["g1", ("g3", "g2")]
+        blank_cards (list[int]): number of blank cards between 2 consecutive criteria
+
+    Returns:
+        dict: name of criterion as key and it's weight as a value
+    """
+    num_of_criteria = len(ordered_criteria)
+    assert len(blank_cards) == num_of_criteria-1
+
+    r2 = np.arange(num_of_criteria) + np.cumsum([0] + blank_cards) + 1
+    w = 1 + (Z-1) * (r2 - 1)/(r2[-1] - 1)
+    w /= w.sum()
+
+    return {criterion: weight for criterion, weight in zip(ordered_criteria, w)}
+
 
 if __name__ == "__main__":
-    srf = SRF()
-    srf.solve(10, 5, [2,0,3,1])
+    print(get_srf(10, ["g1", "g2", "g3", "g4", "g5"], [2, 0, 3, 1]))
+    print(get_srf(8, ["g4", "g3", "g2", "g1"], [3, 0, 1]))
+    print(get_srf(8, ["g4", ("g3", "g2"), "g1"], [3, 1]))
