@@ -190,22 +190,22 @@ class UTAInconsistency(UTA):
         """
             Create objective as sum of positive and negative errors for every U(a)
         """
-        binary_variables = []
+        self.binary_variables = []
         for a, b, relation in self.pref_informations:
-            binary_variables.append(LpVariable(f"b_{a}_{b}", cat='Binary'))
+            self.binary_variables.append(LpVariable(f"b_{a}_{b}", cat='Binary'))
                 
 
-        self.problem += lpSum(binary_variables)
+        self.problem += lpSum(self.binary_variables)
 
     def _add_comparison_constraints(self):
-        for a, b, relation in self.pref_informations:
+        for (a, b, relation), lpvar in zip(self.pref_informations, self.binary_variables):
             LHS, RHS = self._create_initial_LHS_RHS(a, b)
 
             if relation == RelationUTA.PREFFERENCE:
-                self.problem += LHS >= (RHS + 0.00001)
+                self.problem += LHS >= (RHS - 0.00001)
             else:
-                self.problem += LHS >= (RHS + 0.00001)
-                self.problem += RHS >= (LHS + 0.00001)
+                self.problem += LHS >= (RHS - lpvar)
+                self.problem += RHS >= (LHS - lpvar)
 
 
 if __name__ == "__main__":
