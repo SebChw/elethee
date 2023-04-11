@@ -186,8 +186,26 @@ class OrdinalRegression(UTA):
 
 
 class UTAInconsistency(UTA):
-    # TODO
-    pass
+    def _create_objective(self):
+        """
+            Create objective as sum of positive and negative errors for every U(a)
+        """
+        binary_variables = []
+        for a, b, relation in self.pref_informations:
+            binary_variables.append(LpVariable(f"b_{a}_{b}", cat='Binary'))
+                
+
+        self.problem += lpSum(binary_variables)
+
+    def _add_comparison_constraints(self):
+        for a, b, relation in self.pref_informations:
+            LHS, RHS = self._create_initial_LHS_RHS(a, b)
+
+            if relation == RelationUTA.PREFFERENCE:
+                self.problem += LHS >= (RHS + 0.00001)
+            else:
+                self.problem += LHS >= (RHS + 0.00001)
+                self.problem += RHS >= (LHS + 0.00001)
 
 
 if __name__ == "__main__":
@@ -203,5 +221,5 @@ if __name__ == "__main__":
                         PreferenceType.GAIN, PreferenceType.COST]
     num_breaks = [1, 1, 1]
 
-    OrdinalRegression().solve(alternatives, pref_informations,
+    UTAInconsistency().solve(alternatives, pref_informations,
                               preference_types, num_breaks)
