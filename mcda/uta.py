@@ -14,6 +14,30 @@ class PreferenceType(Enum):
     COST = -1
     GAIN = 1
 
+class ClassNames(Enum):
+    B = 0
+    C = 1
+    D = 2
+    E = 3
+    H = 4
+    I = 5
+    J = 6
+    K = 7
+    L = 8
+    M = 9
+    N = 10
+    P = 11
+    Q = 12
+    R = 13
+    T = 14
+    U = 15
+    V = 16
+    W = 17
+    Y = 18
+    Z = 19
+    def __int__(self):
+        return self.value
+
 
 Data = pd.DataFrame | np.ndarray
 pref_information_type = tuple[int, int, RelationUTA]
@@ -127,14 +151,15 @@ class UTA(ABC):
         LHS = None
         RHS = None
         for alt in [a, b]:
+            num_alt = int(alt)
             for i in range(self.num_criteria):
-                bin_a = self.bins_of_u[alt, i]
-                x_i, x_j, x_j_1 = self.alternatives[alt,
+                bin_a = self.bins_of_u[num_alt, i]
+                x_i, x_j, x_j_1 = self.alternatives[num_alt,
                                                     i], self.all_break_points[i][bin_a-1], self.all_break_points[i][bin_a]
                 u_x_j, u_x_j_1 = self.breakpoints_variables[i][bin_a -
                                                                1], self.breakpoints_variables[i][bin_a]
 
-                if alt == a:
+                if num_alt == a:
                     LHS += u_x_j + (x_i - x_j)/(x_j_1 - x_j) * \
                         (u_x_j_1 - u_x_j)
                 else:
@@ -192,7 +217,7 @@ class UTAInconsistency(UTA):
         """
         self.binary_variables = []
         for a, b, relation in self.pref_informations:
-            self.binary_variables.append(LpVariable(f"b_{a}_{b}", cat='Binary'))
+            self.binary_variables.append(LpVariable(f"v_{a}_{b}", cat='Binary'))
                 
 
         self.problem += lpSum(self.binary_variables)
