@@ -3,40 +3,23 @@ import numpy as np
 from enum import Enum
 from pulp import LpProblem, LpVariable, LpMinimize, lpSum, LpStatus, value
 from abc import ABC, abstractmethod
-
+import matplotlib.pyplot as plt
+import math
 
 class RelationUTA(Enum):
     PREFFERENCE = 0
     INDIFFERENCE = 1
+
+    def __eq__(self, other):
+        return self.value == other.value
 
 
 class PreferenceType(Enum):
     COST = -1
     GAIN = 1
 
-class ClassNames(Enum):
-    B = 0
-    C = 1
-    D = 2
-    E = 3
-    H = 4
-    I = 5
-    J = 6
-    K = 7
-    L = 8
-    M = 9
-    N = 10
-    P = 11
-    Q = 12
-    R = 13
-    T = 14
-    U = 15
-    V = 16
-    W = 17
-    Y = 18
-    Z = 19
-    def __int__(self):
-        return self.value
+    def __eq__(self, other):
+        return self.value == other.value
 
 
 Data = pd.DataFrame | np.ndarray
@@ -46,11 +29,12 @@ pref_information_type = tuple[int, int, RelationUTA]
 class UTA(ABC):
     """In this class thera are common parts to both Ordinal Regression, and Inconsistency resolver"""
 
-    def solve(self,
+    def __init__(self,
               alternatives: Data,
               pref_informations: list[pref_information_type],
               preference_types: list[PreferenceType],
               num_breaks: list[int],
+              attributes_names: list[str],
               problem_name: str = "UTA"):
         """solver for UTA type problems
 
@@ -71,29 +55,37 @@ class UTA(ABC):
         self.num_breaks = num_breaks
         self.problem_name = problem_name
         self.num_criteria = self.alternatives.shape[1]
+        self.attributes_names = attributes_names
 
         if self.alternatives.shape[1] != len(self.num_breaks):
             raise ValueError(
                 "You should give number of breaks of every utility function created.")
 
         self.problem = LpProblem(self.problem_name, LpMinimize)
-
+    
+    def solve(self, verbose=False):
         self._create_breakpoints_variables()
         self._create_objective()
         self._add_comparison_constraints()
         self._add_normalization_constraints()
         self._add_monotonicity_constraints()
 
-        print(self.problem)
         self.problem.solve()
-        print("Status:", LpStatus[self.problem.status])
-        for v in self.problem.variables():
-            print(v.name, "=", v.varValue)
+        self.status = LpStatus[self.problem.status]
+        if verbose:
+            print("======================\nPROBLEM DEFINITION\n==============================")
+            print(self.problem)
+            print("=========================================\nSTATUS AND VARIABLES VALUES\n===================================")
+            print("Status:", self.status)
+            for v in self.problem.variables():
+                print(v.name, "=", v.varValue)
+            print("=========================================\nOBJECTIVE\n===================================")
+            print("Total error ", value(self.problem.objective))
 
-        print("Total error ", value(self.problem.objective))
+        return {"status": self.status, "vars": self.problem.variables(), "error": value(self.problem.objective)}
 
     def _create_breakpoints_variables(self):
-        """Probably the most confusing function. The goal is to create at the end have 
+        """Probably the most confusing function. The goal is to create at the end have
         self.breakpoints_variables[i]: list[LpVariables] - variables connected to ith marginal utility function
         self.all_break_points[i] : list[float] - values of particular breakpoints needed for linear interpolation calculation
         self.bins_of_u : np.array - for every gi(a) we want to indicate between which 2 breakpoints of marginal utility function it lies.
@@ -159,7 +151,7 @@ class UTA(ABC):
                 u_x_j, u_x_j_1 = self.breakpoints_variables[i][bin_a -
                                                                1], self.breakpoints_variables[i][bin_a]
 
-                if num_alt == a:
+                if num_alt == int(a):
                     LHS += u_x_j + (x_i - x_j)/(x_j_1 - x_j) * \
                         (u_x_j_1 - u_x_j)
                 else:
@@ -167,6 +159,51 @@ class UTA(ABC):
                         (u_x_j_1 - u_x_j)
 
         return LHS, RHS
+    
+    def plot_utility_functions(self):
+        if self.status != "Optimal":
+            raise Exception(
+                f"To draw utility functions status of your problem must be `Optimal`: now it's {self.status}")
+
+        variables = {
+            v.name: v.varValue for v in self.problem.variables() if "U" in v.name}
+        
+        fig, ax = plt.subplots(math.ceil(len(self.num_breaks) / 3) , 3, figsize=(20,15))
+
+        for num_var, num_breaks in enumerate(self.num_breaks):
+            xs = self.all_break_points[num_var]
+            ys = []
+            for num_break in range(num_breaks + 2):
+                ys.append(variables[f"U_{num_var}({xs[num_break]})"])
+
+            ax[num_var//3][num_var%3].plot(xs, ys, 'bo-')
+            ax[num_var//3][num_var%3].set_title(f"Utility function for {self.attributes_names[num_var]}")
+            ax[num_var//3][num_var%3].set_ylim([-0.05,1.05])
+            ax[num_var//3][num_var%3].set_xticks(xs)
+            ax[num_var//3][num_var%3].set_xlabel(self.attributes_names[num_var])
+            ax[num_var//3][num_var%3].set_ylabel("marginal utility function")
+
+        plt.show()
+
+    def evaluate(self, data: np.ndarray):
+        evaluations = []
+        for alternative in data:
+            variables = {v.name: v.varValue for v in self.problem.variables() if "U" in v.name}
+            alternative_score = 0
+            for num_var, num_breaks in enumerate(self.num_breaks):
+                break_points = self.all_break_points[num_var]
+                for num_break in range(1, num_breaks + 2):
+                    if alternative[num_var] <= break_points[num_break]:
+                        x_i, x_i_1 = break_points[num_break - 1], break_points[num_break]
+                        u_i, u_i_1 = variables[f"U_{num_var}({x_i})"], variables[f"U_{num_var}({x_i_1})"]
+                        alternative_score += u_i + (alternative[num_var] - x_i)/(x_i_1 - x_i)*(u_i_1 - u_i)
+                        break
+
+            evaluations.append(alternative_score)
+
+        return evaluations
+
+
 
     @abstractmethod
     def _create_objective(self):
@@ -217,8 +254,8 @@ class UTAInconsistency(UTA):
         """
         self.binary_variables = []
         for a, b, relation in self.pref_informations:
-            self.binary_variables.append(LpVariable(f"v_{a}_{b}", cat='Binary'))
-                
+            self.binary_variables.append(
+                LpVariable(f"v_{a}_{b}", cat='Binary'))
 
         self.problem += lpSum(self.binary_variables)
 
@@ -227,16 +264,40 @@ class UTAInconsistency(UTA):
             LHS, RHS = self._create_initial_LHS_RHS(a, b)
 
             if relation == RelationUTA.PREFFERENCE:
-                self.problem += LHS >= (RHS - 0.00001)
+                self.problem += LHS >= (RHS - lpvar + 0.00001)
             else:
                 self.problem += LHS >= (RHS - lpvar)
                 self.problem += RHS >= (LHS - lpvar)
+
+    def find_all_inconsistent(self):
+        if self.status != "Optimal":
+            raise Exception(
+                f"You need to run solve method before finding all inconsistencies")
+        all_inconsistent = []
+
+        while self.status == "Optimal":
+            inconsistent_solution = []
+            new_constraint = None
+            variables = [v for v in self.problem.variables() if "v" in v.name]
+            for var in variables:
+                name, var_value = var.name, var.varValue
+                if var_value == 1:
+                    inconsistent_solution.append(name)
+                    new_constraint += var
+
+            all_inconsistent.append(inconsistent_solution)
+            self.problem += new_constraint <= value(self.problem.objective) - 1
+            
+            self.problem.solve()
+            self.status = LpStatus[self.problem.status]
+
+        return all_inconsistent
 
 
 if __name__ == "__main__":
     alternatives = np.array([
         [5, 0, 10],
-        [10, 5, 15],
+        [10, 2.5, 15],
         [0, 10, 12.5],
     ])
 
@@ -246,5 +307,20 @@ if __name__ == "__main__":
                         PreferenceType.GAIN, PreferenceType.COST]
     num_breaks = [1, 1, 1]
 
+    OrdinalRegression().solve(alternatives, pref_informations,
+                              preference_types, num_breaks, ["attr1", "attr2", "attr3"], verbose=True)
+
+    alternatives = np.random.randn(8, 1)
+
+    num_breaks = [0]
+    preference_types = [PreferenceType.GAIN]
+
+    # A0,B1,C2,D3,E4,F5,G6,J7
+    # As in the lecture F > E, D > C, A > J, B = E,  F = G
+    pref_informations = [(5, 4, RelationUTA.PREFFERENCE),
+                         (3, 2, RelationUTA.PREFFERENCE),
+                         (0, 7, RelationUTA.PREFFERENCE),
+                         (1, 4, RelationUTA.INDIFFERENCE),
+                         (5, 6, RelationUTA.INDIFFERENCE)]
     UTAInconsistency().solve(alternatives, pref_informations,
-                              preference_types, num_breaks)
+                             preference_types, num_breaks, ['attr1'], verbose=True)

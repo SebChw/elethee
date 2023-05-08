@@ -38,6 +38,26 @@ def infer_lambda(weights: np.ndarray, criteria_to_be_compared: list[list]):
 
     return min(weights_sum)
 
+def create_rank_matrics(rank):
+    """I know that we don't consider indifference, sorry for that."""
+    n_alternatives = len(rank)
+    ranking = np.zeros((n_alternatives, n_alternatives))
+    for i in range(n_alternatives):
+        better_alternative = rank[i]
+        for j in range(i, n_alternatives):
+            worse_alternative = rank[j]
+            ranking[better_alternative, worse_alternative] = 1
+
+    return ranking
+
+def kendalls_tau(rank1, rank2):
+    matrix1 = create_rank_matrics(rank1)
+    matrix2 = create_rank_matrics(rank2)
+
+    m = len(rank1)
+    k_distance = np.sum(np.abs(matrix1 - matrix2))/2
+
+    return 1 - 4 * k_distance/ (m * (m-1))
 
 if __name__ == "__main__":
     print(get_srf(10, ["g1", "g2", "g3", "g4", "g5"], [2, 0, 3, 1]))
